@@ -1,0 +1,177 @@
+LIBRARY ieee;
+USE ieee.std_logic_1164.ALL;
+USE ieee.numeric_std.ALL;
+
+-- Top level que conecta CPU, RAM, decodificador e I/Os.
+-- Alunos: Andre Weber, Caio Fauza e Gustavo Braga.
+
+ENTITY clock IS
+  GENERIC (
+    DATA_WIDTH : NATURAL := 16;
+    ADDR_WIDTH : NATURAL := 10
+  );
+
+  PORT (
+    -- Input ports
+    CLOCK_50 : IN STD_LOGIC;
+    SW : IN STD_LOGIC_VECTOR(9 DOWNTO 0);
+    KEY : IN STD_LOGIC_VECTOR(3 DOWNTO 0);
+
+    -- Output ports
+    HEX0, HEX1, HEX2, HEX3, HEX4, HEX5 : OUT STD_LOGIC_VECTOR(6 DOWNTO 0)
+  );
+END ENTITY;
+ARCHITECTURE arch_name OF clock IS
+  SIGNAL displayInput0, displayInput1, displayInput2, displayInput3, displayInput4, displayInput5 : STD_LOGIC_VECTOR(3 DOWNTO 0); --Inputs para desenhar numeros no display
+  
+  SIGNAL data_input, address : STD_LOGIC_VECTOR(7 DOWNTO 0);
+  
+  SIGNAL cpuOutput : STD_LOGIC_VECTOR(7 DOWNTO 0); --Saída baseada na operação da ULA, vinda do fluxo de dados
+  
+  SIGNAL instructionOutput : STD_LOGIC_VECTOR(26 DOWNTO 0); --Saída instrução, vinda da CPU
+  
+  SIGNAL habilitaDisplay : STD_LOGIC_VECTOR(5 DOWNTO 0);
+  SIGNAL habilitaSwitches : STD_LOGIC_VECTOR(8 DOWNTO 0);
+  SIGNAL habilitaRam : STD_LOGIC;
+  SIGNAL habilitaBaseDeTempo : STD_LOGIC;
+  SIGNAL clearBaseDeTempo : STD_LOGIC;
+  SIGNAL habilitaButton : STD_LOGIC_VECTOR(3 DOWNTO 0);
+  
+  SIGNAL w, r : STD_LOGIC;
+  
+BEGIN
+
+  -- Base de tempo utilizada no projeto, com seletor no SW(0) para acelerar o passo
+  TIMEBASE : ENTITY work.dividerInterface
+    PORT MAP(
+      clk => CLOCK_50,
+      habilitaLeitura => habilitaBaseDeTempo,
+      limpaLeitura => clearBaseDeTempo,
+      leituraUmSegundo => data_input, --Barramento de entrada base de tempo (tristate)
+      timeSelector => SW(0)
+    );
+
+  CPU : ENTITY work.cpu
+    PORT MAP(
+      address => address,
+      data_input => data_input,
+      data_output => cpuOutput,
+      clk => CLOCK_50,
+      w => w,
+      r => r,
+      instructionOutput => instructionOutput
+    );
+
+  DECODER : ENTITY work.decoder
+    PORT MAP(
+      input => address,
+      habilitaRam => habilitaRam,
+      habilitaDisplay => habilitaDisplay,
+      habilitaBaseDeTempo => habilitaBaseDeTempo,
+      clearBaseDeTempo => clearBaseDeTempo,
+      habilitaButton => habilitaButton,
+      habilitaSwitches => habilitaSwitches
+    );
+
+  BUTTONS: ENTITY work.buttonsInterface port map(
+		input => habilitaButton,
+		buttons => KEY,
+		output => data_input -- Barramento de entrada botões (tristate)
+	);
+  
+  SWITCHES: ENTITY work.switchesInterface port map(
+		input => habilitaSwitches,
+		switches => SW,
+		output => data_input -- Barramento de entrada switches (tristate)
+	);
+  
+  RAM : ENTITY work.ram
+    PORT MAP(
+      addr => address(7 DOWNTO 0),
+      we => w,
+      re => r,
+      habilita => habilitaRam,
+      clk => CLOCK_50,
+      dado_in => cpuOutput,
+      dado_out => data_input
+    );
+
+  -- Segundos
+  -- Registrador para unidades de segundos
+  REG_SECOND_UNIT : ENTITY work.genericRegister GENERIC MAP(dataWidth => 4)
+    PORT MAP(
+      DIN => cpuOutput(3 DOWNTO 0),
+      DOUT => displayInput0,
+      ENABLE => habilitaDisplay(0),
+      w => w,
+      CLK => CLOCK_50,
+      RST => '0'
+    );
+	 
+  -- Registrador para dezenas de segundos
+  REG_SECOND_TEN : ENTITY work.genericRegister GENERIC MAP(dataWidth => 4)
+    PORT MAP(
+      DIN => cpuOutput(3 DOWNTO 0),
+      DOUT => displayInput1,
+      ENABLE => habilitaDisplay(1),
+      w => w,
+      CLK => CLOCK_50,
+      RST => '0'
+    );
+
+  -- Minutos
+  -- Registrador para unidades de minutos
+  REG_MINUTE_UNIT : ENTITY work.genericRegister GENERIC MAP(dataWidth => 4)
+    PORT MAP(
+      DIN => cpuOutput(3 DOWNTO 0),
+      DOUT => displayInput2,
+      ENABLE => habilitaDisplay(2),
+      w => w,
+      CLK => CLOCK_50,
+      RST => '0'
+    );
+
+  -- Registrador para dezenas de minutos
+  REG_MINUTE_TEN : ENTITY work.genericRegister GENERIC MAP(dataWidth => 4)
+    PORT MAP(
+      DIN => cpuOutput(3 DOWNTO 0),
+      DOUT => displayInput3,
+      ENABLE => habilitaDisplay(3),
+      w => w,
+      CLK => CLOCK_50,
+      RST => '0'
+    );
+
+  -- Horas
+  -- Registrador para unidades de horas
+  REG_HOUR_UNIT : ENTITY work.genericRegister GENERIC MAP(dataWidth => 4)
+    PORT MAP(
+      DIN => cpuOutput(3 DOWNTO 0),
+      DOUT => displayInput4, ENABLE =>
+      habilitaDisplay(4),
+      w => w,
+      CLK => CLOCK_50,
+      RST => '0'
+    );
+
+  -- Registrador para dezenas de horas
+  REG_HOUR_TEN : ENTITY work.genericRegister GENERIC MAP(dataWidth => 4)
+    PORT MAP(
+      DIN => cpuOutput(3 DOWNTO 0),
+      DOUT => displayInput5,
+      ENABLE => habilitaDisplay(5),
+      w => w,
+      CLK => CLOCK_50,
+      RST => '0'
+    );
+
+  -- HEX OUTPUT
+  DISPLAY0 : ENTITY work.display PORT MAP(data => displayInput0, output => HEX0);
+  DISPLAY1 : ENTITY work.display PORT MAP(data => displayInput1, output => HEX1);
+  DISPLAY2 : ENTITY work.display PORT MAP(data => displayInput2, output => HEX2);
+  DISPLAY3 : ENTITY work.display PORT MAP(data => displayInput3, output => HEX3);
+  DISPLAY4 : ENTITY work.display PORT MAP(data => displayInput4, output => HEX4);
+  DISPLAY5 : ENTITY work.display PORT MAP(data => displayInput5, output => HEX5);
+
+
+END ARCHITECTURE;

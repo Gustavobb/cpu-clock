@@ -1,0 +1,143 @@
+LIBRARY IEEE;
+USE IEEE.std_logic_1164.ALL;
+USE ieee.numeric_std.ALL;
+USE work.constants.ALL;
+
+ENTITY rom IS
+    GENERIC (
+        dataWidth : NATURAL := 27;
+        addrWidth : NATURAL := 8
+    );
+    PORT (
+        address : IN STD_LOGIC_VECTOR (addrWidth - 1 DOWNTO 0);
+        data : OUT STD_LOGIC_VECTOR (dataWidth - 1 DOWNTO 0)
+    );
+END ENTITY;
+
+ARCHITECTURE async OF rom IS
+
+    TYPE memoryBlock IS ARRAY(0 TO 2 ** addrWidth - 1) OF STD_LOGIC_VECTOR(dataWidth - 1 DOWNTO 0);
+
+    FUNCTION initMemory
+        RETURN memoryBlock IS VARIABLE tmp : memoryBlock := (OTHERS => (OTHERS => '0'));
+    BEGIN
+        ---  OPCODE       RA         RB      RC(escrita)    ENDEREÇO/IMEDIATO
+        --  (4 bits)   (5 bits)   (5 bits)    (5 bits)          (8 bits)
+
+        
+        -- Definição de constantes e alocamentos
+        -- Valor Imediato 1 = R20
+        -- Valor Imediato 10 = R21
+        -- Valor Imediato 6 = R22
+        -- Valor Imediato 2 = R23
+        -- Valor Imediato 4 = R24
+        -- Valor Imediato 0 = R25
+        -- Time set enable = R26
+        tmp(0) := lea & nop & nop & R20 & b"00000001"; -- 1
+        tmp(1) := lea & nop & nop & R21 & b"00001010"; -- 10
+        tmp(2) := lea & nop & nop & R22 & b"00000110"; -- 6
+        tmp(3) := lea & nop & nop & R23 & b"00000010"; -- 2
+        tmp(4) := lea & nop & nop & R24 & b"00000100"; -- 4
+        tmp(5) := lea & nop & nop & R25 & b"00000000"; -- 0
+        tmp(6) := lea & nop & nop & R26 & b"00000000"; -- TimesetEnabled
+        tmp(7) := lea & nop & nop & R01 & b"00000000"; -- Sec unit
+        tmp(8) := lea & nop & nop & R02 & b"00000000"; -- Sec ten
+        tmp(9) := lea & nop & nop & R03 & b"00000000"; -- Min unit
+        tmp(10) := lea & nop & nop & R04 & b"00000000"; -- Min ten
+        tmp(11) := lea & nop & nop & R05 & b"00000000"; -- Hour unit
+        tmp(12) := lea & nop & nop & R06 & b"00000000"; -- Hour ten
+        tmp(13) := store & nop & R05 & nop & b"00000100"; -- hour_u -> to disp[4]
+        tmp(14) := store & nop & R06 & nop & b"00000101"; -- hour_d -> to disp[5]
+
+        -- BuscaSec
+        tmp(15) := load & nop & nop & R26 & b"00001101"; -- R26 = SW[1]
+        tmp(16) := je & R26 & R20 & nop & b"00111001"; -- if R26 == 1 jmp TimeSet
+        tmp(17) := load & nop & nop & R07 & b"00000110"; -- R07 = read_sec 
+        tmp(18) := je & R07 & R20 & nop & b"00010100"; -- if R07 == 1 jmp IncSecU
+        tmp(19) := jmp & nop & nop & nop & b"00001111"; -- jmp BuscaSec
+
+        -- IncSecU 
+        tmp(20) := load & nop & nop & nop & b"00000111"; -- clear baseDeTempo
+        tmp(21) := add & R01 & R20 & R01 & b"00000000"; -- R01 += 1
+        tmp(22) := je & R01 & R21 & nop & b"00011001"; -- if sec_u == 10 jmp IncSecD
+        tmp(23) := store & nop & R01 & nop & b"00000000"; -- sec_u -> to disp[0]
+        tmp(24) := jmp & nop & nop & nop & b"00001111"; -- BuscaSec
+
+        -- IncSecD
+        tmp(25) := lea & nop & nop & R01 & b"00000000"; -- R01 = 0
+        tmp(26) := store & nop & R01 & nop & b"00000000"; -- sec_u -> to disp[0]
+        tmp(27) := add & R02 & R20 & R02 & b"00000000"; -- R02 += 1
+        tmp(28) := je & R02 & R22 & nop & b"00011111"; -- if R02 == 6 jmp IncMinU
+        tmp(29) := store & nop & R02 & nop & b"00000001"; -- sec_d -> to disp[1]
+        tmp(30) := jmp & nop & nop & nop & b"00001111"; -- BuscaSec
+
+        -- IncMinU
+        tmp(31) := lea & nop & nop & R02 & b"00000000"; -- R02 = 0
+        tmp(32) := store & nop & R02 & nop & b"00000001"; -- sec_d -> to disp[1]
+        tmp(33) := add & R03 & R20 & R03 & b"00000000"; -- R03 += 1
+        tmp(34) := je & R03 & R21 & nop & b"00100101"; -- if R03 == 10 jmp IncMinD
+        tmp(35) := store & nop & R03 & nop & b"00000010"; -- min_u -> to disp[2]
+        tmp(36) := jmp & nop & nop & nop & b"00001111"; -- BuscaSec
+
+        -- IncMinD
+        tmp(37) := lea & nop & nop & R03 & b"00000000"; -- R03 = 0
+        tmp(38) := store & nop & R03 & nop & b"00000010"; -- min_u -> to disp[2]
+        tmp(39) := add & R04 & R20 & R04 & b"00000000"; -- R04 += 1
+        tmp(40) := je & R04 & R22 & nop & b"00101011"; -- if R04 == 6 jmp IncHourU
+        tmp(41) := store & nop & R04 & nop & b"00000011"; -- min_d -> to disp[3]
+        tmp(42) := jmp & nop & nop & nop & b"00001111"; -- BuscaSec
+
+        -- IncHourU 
+        tmp(43) := lea & nop & nop & R04 & b"00000000"; -- R04 = 0
+        tmp(44) := store & nop & R04 & nop & b"00000011"; -- min_d -> to disp[3]
+        tmp(45) := add & R05 & R20 & R05 & b"00000000"; -- R05 += 1
+        tmp(46) := je & R05 & R24 & nop & b"00110010"; -- if R05 == 4 jmp CheckMidnigth
+        tmp(47) := je & R05 & R21 & nop & b"00110100"; -- if R05 == 10 jmp IncHourD
+        tmp(48) := store & nop & R05 & nop & b"00000100"; -- hour_u -> to disp[4]
+        tmp(49) := jmp & nop & nop & nop & b"00001111"; -- BuscaSec
+
+        -- CheckMidnight
+        tmp(50) := je & R06 & R23 & nop & b"00001011"; -- if R06 == 2 jmp [11]
+        tmp(51) := jmp & nop & nop & nop & b"00101111"; -- jmp IncHourU[47]
+
+        -- IncHourD 
+        tmp(52) := lea & nop & nop & R05 & b"00000000"; -- R05 = 0
+        tmp(53) := store & nop & R05 & nop & b"00000100"; -- hour_u -> to disp[4]
+        tmp(54) := add & R06 & R20 & R06 & b"00000000"; -- R06 += 1
+        tmp(55) := store & nop & R06 & nop & b"00000101"; -- hour_d -> to disp[5]
+        tmp(56) := jmp & nop & nop & nop & b"00001111"; -- BuscaSec
+
+        -- TimeSet
+        tmp(57) := load & nop & nop & R08 & b"00001000"; -- R08 = key[3] (hour)
+        tmp(58) := je & R08 & R20 & nop & b"01000000"; -- if R08 == 1 jmp CheckPressedButHour
+
+        tmp(59) := load & nop & nop & R09 & b"00001001"; -- R09 = key[2] (minute)
+        tmp(60) := je & R09 & R20 & nop & b"01000011"; -- if R09 == 1 jmp CheckPressedButMin
+
+        tmp(61) := load & nop & nop & R10 & b"00001010"; -- R10 = key[1] (seconds)
+        tmp(62) := je & R10 & R20 & nop & b"01000110"; -- if R10 == 1 jmp CheckPressedButSec
+
+        tmp(63) := jmp & nop & nop & nop & b"00001111"; -- BuscaSec
+
+        -- CheckPressedButHour
+        tmp(64) := load & nop & nop & R08 & b"00001000"; -- R08 = key[3] (hour)
+        tmp(65) := je & R08 & R20 & nop & b"01000000"; -- if R08 == 1 jmp CheckPressedButHour
+        tmp(66) := jmp & nop & nop & nop & b"00101101"; -- jmp IncHourU[45]
+
+        -- CheckPressedButMin
+        tmp(67) := load & nop & nop & R09 & b"00001001"; -- R09 = key[2] (minute)
+        tmp(68) := je & R09 & R20 & nop & b"01000011"; -- if R09 == 1 jmp CheckPressedButMin
+        tmp(69) := jmp & nop & nop & nop & b"00100001"; -- jmp IncMinU[33]
+
+        -- CheckPressedButSec
+        tmp(70) := load & nop & nop & R10 & b"00001010"; -- R10 = key[1] (seconds)
+        tmp(71) := je & R10 & R20 & nop & b"01000110"; -- if R10 == 1 jmp CheckPressedButSec
+        tmp(72) := jmp & R10 & R20 & nop & b"00010101"; -- jmp IncSecU[21]
+
+        RETURN tmp;
+
+    END initMemory;
+    SIGNAL memROM : memoryBlock := initMemory;
+BEGIN
+    data <= memROM (to_integer(unsigned(address)));
+END ARCHITECTURE;
